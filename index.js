@@ -3,21 +3,30 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken')
 require('dotenv').config();
 const app = express();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const port = process.env.PORT || 3001;
 
 
 // middleware
+// Becareful in origin url, Please avoid espace,extra slash (/, ) or other unwanted.**
+
 app.use(express.json());
 app.use(cors({
     origin: [
+        "https://lush-looks-client.vercel.app",
         "http://localhost:5173",
     ],
     optionsSuccessStatus: 200,
 }))
-// Becareful in origin url, Please avoid espace,extra slash (/, ) or other unwanted.**
 
+
+// Create jwt with post method. 
+app.post('/authentication', (req, res) => {
+    const userEmail = req.body;
+    const token = jwt.sign(userEmail, process.env.ACCESS_KEY_TOKEN, { expiresIn: "1d" });
+    res.send({ token });
+})
 
 
 // verify jwt 
@@ -59,6 +68,17 @@ const verifyBuyer = async (req, res, next) => {
     next();
 }
 
+// Verify Admin 
+const verifyAdmin = async (req, res, next) => {
+    const userEmail = req.decoded.email;
+    const query = { email: userEmail };
+    const user = await userCollection.findOne(query);
+    if (user.role !== 'admin') {
+        return res.send({ message: "Forbidden access" });
+    }
+    next();
+}
+
 
 
 // mongoDB 
@@ -84,18 +104,37 @@ const dbConnect = async () => {
         console.log('Data Base connected successfully.!!');
 
         // api 
-        // post jwt 
-        app.post('/authentication', (req, res) => {
-            const userEmail = req.body;
-            const token = jwt.sign(userEmail, process.env.ACCESS_KEY_TOKEN, { expiresIn: "1d" });
-            res.send({ token });
+
+        // get all products* 
+        app.get("/all-products", async (req, res) => {
+            const result = await productCollection.find().toArray();
+            res.send(result)
         })
 
-        // get products 
-        app.get("/products", async (req, res) => {
-            const { title, sort, category, brand, } = req.query;
+        // get edit-product | seller
+        app.get("/seller/edit-product/:id", async (req, res) => {
+            const query = { _id: new ObjectId(req.params.id) }
+            const result = await productCollection.findOne(query);
+            res.send(result);
+        })
 
-            const query = [];
+        // get my-products | seller*
+        app.get("/seller/my-products/:email", async (req, res) => {
+            const result = await productCollection.aggregate(
+                [
+                    {
+                        $match: { email: `${req.params.email}` }
+                    }
+                ]
+            ).toArray();
+            res.send(result);
+        })
+
+        // get products* 
+        app.get("/products", async (req, res) => {
+            const { title, sort, category, brand, page, limit } = req.query;
+
+            const query = {};
 
             if (title) {
                 query.title = { $regex: title, $options: "i" }
@@ -111,10 +150,15 @@ const dbConnect = async () => {
 
             const sortOption = sort === 'asc' ? 1 : -1
 
-
+            // pagination* 
+            const totalProducts = await productCollection.countDocuments(query);
+            const intPage = parseInt(page);
+            const intLimit = parseInt(limit);
 
             const products = await productCollection
                 .find(query)
+                .skip((intPage - 1) * intLimit)
+                .limit(intLimit)
                 .sort({ price: sortOption })
                 .toArray();
 
@@ -125,28 +169,34 @@ const dbConnect = async () => {
                 }
             }).toArray();
 
-            const Brands = { ...new Set(productInfo.map(product => product.brand)) };
-            const Categories = { ...new Set(productInfo.map(product => product.category)) };
+            const Brands = [...new Set(productInfo.map(product => product.brand))];
+            const Categories = [...new Set(productInfo.map(product => product.category))];
 
-            res.json({ products, Brands, Categories })
+            res.send({ products, Brands, Categories, totalProducts })
         })
 
-        // insert products 
-        app.post("/products/add", async (req, res) => {
+        // insert products* 
+        app.post("/products/add", verifyToken, verifySeller, async (req, res) => {
             const product = req.body;
             const result = await productCollection.insertOne(product);
             res.send(result)
         })
 
-        // get user 
-        app.get("/users/:email", async (req, res) => {
+        // get all users | admin*
+        app.get("/admin/users", async (req, res) => {
+            const result = await userCollection.find().toArray();
+            res.send(result);
+        })
+
+        // get user*
+        app.get("/users/:email", verifyToken, async (req, res) => {
             const userEmail = req.params.email;
             const query = { email: userEmail };
             const result = await userCollection.findOne(query);
             res.send(result);
         })
 
-        // create user 
+        // create user* 
         app.post('/users', async (req, res) => {
             const user = req.body;
 
@@ -161,15 +211,15 @@ const dbConnect = async () => {
         })
 
 
-
     } catch (error) {
         console.log(error);
     }
 };
+
 dbConnect();
 
 
-// api 
+// api testing
 app.get("/", (req, res) => {
     res.send('LushLoooks is running');
 });
