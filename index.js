@@ -105,6 +105,53 @@ const dbConnect = async () => {
 
         // api 
 
+        // get wishlist 
+        app.get('/wishlist/:userId', verifyToken, async (req, res) => {
+            const userId = req.params.userId;
+            const query = { _id: new ObjectId(String(userId)) };
+            const user = await userCollection.findOne(query);
+
+            if (!user) {
+                return res.send({ message: "forbidden access" })
+            }
+
+            const wishlist = await productCollection.find(
+                {
+                    _id: { $in: user.wishlist || [] }
+                }
+            ).toArray()
+
+            res.send(wishlist)
+        })
+
+        // update wishlist 
+        app.patch('/wishlist/add', async (req, res) => {
+            const { userEmail, productId } = req.body;
+            const result = await userCollection.updateOne(
+                { email: userEmail },
+                {
+                    $addToSet: {
+                        wishlist: new ObjectId(String(productId))
+                    }
+                }
+            )
+            res.send(result);
+        })
+
+        // update to remove from wishlist 
+        app.patch('/wishlist/remove', async (req, res) => {
+            const { userEmail, productId } = req.body;
+            const result = await userCollection.updateOne(
+                { email: userEmail },
+                {
+                    $pull: {
+                        wishlist: new ObjectId(String(productId))
+                    }
+                }
+            )
+            res.send(result);
+        })
+
         // get all products* 
         app.get("/all-products", async (req, res) => {
             const result = await productCollection.find().toArray();
@@ -189,7 +236,7 @@ const dbConnect = async () => {
         })
 
         // get user*
-        app.get("/users/:email", verifyToken, async (req, res) => {
+        app.get("/users/:email", async (req, res) => {
             const userEmail = req.params.email;
             const query = { email: userEmail };
             const result = await userCollection.findOne(query);
