@@ -124,7 +124,7 @@ const dbConnect = async () => {
             res.send(wishlist)
         })
 
-        // update wishlist 
+        // update wishlist to add card
         app.patch('/wishlist/add', async (req, res) => {
             const { userEmail, productId } = req.body;
             const result = await userCollection.updateOne(
@@ -158,9 +158,16 @@ const dbConnect = async () => {
             res.send(result)
         })
 
-        // get edit-product | seller
+        // get product|details*
+        app.get("/product/details/:id", async (req, res) => {
+            const query = { _id: new ObjectId(String(req.params.id)) }
+            const result = await productCollection.findOne(query);
+            res.send(result);
+        })
+
+        // get edit-product | seller*
         app.get("/seller/edit-product/:id", async (req, res) => {
-            const query = { _id: new ObjectId(req.params.id) }
+            const query = { _id: new ObjectId(String(req.params.id)) }
             const result = await productCollection.findOne(query);
             res.send(result);
         })
@@ -228,6 +235,36 @@ const dbConnect = async () => {
             const result = await productCollection.insertOne(product);
             res.send(result)
         })
+
+        // update my-product | seller*
+        app.patch('/seller/edit-product/:id', verifyToken, verifySeller, async (req, res) => {
+            const queryProduct = { _id: new ObjectId(String(req.params.id)) }
+            const product = req.body;
+            const updateProduct = {
+                title: product.title,
+                brand: product.brand,
+                stock: product.stock,
+                price: product.price,
+                category: product.category,
+                image: product.image,
+                description: product.description,
+                //email: product.email,
+            }
+            const updated = await productCollection.updateOne(
+                queryProduct,
+                { $set: updateProduct },
+            );
+
+            res.send(updated);
+        })
+
+        // delete my-product | seller*
+        app.delete("/seller/delete-product/:id", verifyToken, verifySeller, async (req, res) => {
+            const query = { _id: new ObjectId(String(req.params.id)) };
+            const deleted = await productCollection.deleteOne(query);
+            res.send(deleted);
+        })
+
 
         // get all users | admin*
         app.get("/admin/users", async (req, res) => {
